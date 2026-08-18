@@ -21,6 +21,8 @@ from fastapi import Request
 from pydantic import BaseModel
 from app.core.verifier import WebhookVerificationError, verifier
 
+from app.schemas.webhook import WebhookStatsResponse
+
 router = APIRouter()
 
 
@@ -137,3 +139,55 @@ async def test_verify_signature(data: VerifyTestRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Verification failed: {str(exc)}",
         )
+
+@router.post(
+    "/logs/{log_id}/retry",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Manually replay a webhook delivery",
+)
+async def retry_webhook_delivery(
+    log_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Manually re-enqueues a webhook delivery log into Celery.
+    Can be used for permanently failed or pending dispatches.
+    """
+    # 1. Verify ownership
+    log_entry = await webhook_crud.get_log_by_user(
+        db, log_id=log_id, user_id=current_user.id
+    )
+    if not log_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Delivery log not found or does not belong to the user.",
+        )
+
+    # 2. Reset log status in database
+    await webhook_crud.reset_delivery_log_for_retry(db, log=log_entry)
+
+    # 3. Re-enqueue the Celery background task
+    task = send_webhook_event.delay(str(log_entry.id))
+
+    return {
+        "status": "requeued",
+        "log_id": str(log_entry.id),
+        "task_id": task.id,
+    }
+
+@router.get(
+    "/stats",
+    response_model=WebhookStatsResponse,
+    summary="Get webhook delivery health metrics & analytics",
+)
+async def get_webhook_stats(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    hours: int = Query(24, ge=1, le=720, description="Rolling metrics window in hours (default 24h)"),
+):
+    """
+    Returns aggregated delivery metrics, success rates, average latency,
+    and HTTP status code breakdowns for the authenticated user.
+    """
+    return await webhook_crud.get_user_stats(db, user_id=current_user.id, window_hours=hours)

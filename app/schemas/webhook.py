@@ -53,3 +53,25 @@ class WebhookDeliveryLogRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class StatusBreakdown(BaseModel):
+    success: int = 0
+    failed: int = 0
+    pending: int = 0
+    retrying: int = 0
+
+
+class StatusCodeBreakdown(BaseModel):
+    http_2xx: int = 0
+    http_4xx: int = 0
+    http_5xx: int = 0
+    other: int = 0
+
+
+class WebhookStatsResponse(BaseModel):
+    total_deliveries: int
+    success_rate_percentage: float
+    average_response_time_ms: float
+    status_breakdown: StatusBreakdown
+    status_code_breakdown: StatusCodeBreakdown
+    window_hours: int
