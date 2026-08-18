@@ -17,6 +17,10 @@ from app.schemas.webhook import (
 )
 from app.worker.tasks import send_webhook_event
 
+from fastapi import Request
+from pydantic import BaseModel
+from app.core.verifier import WebhookVerificationError, verifier
+
 router = APIRouter()
 
 
@@ -103,3 +107,33 @@ async def dispatch_webhook_event(
         "endpoints_targeted": len(endpoints),
         "task_ids": dispatched_task_ids,
     }
+
+class VerifyTestRequest(BaseModel):
+    payload: dict
+    signature_header: str
+    secret_token: str
+
+
+@router.post(
+    "/verify-test",
+    summary="Utility endpoint to verify webhook HMAC signatures",
+)
+async def test_verify_signature(data: VerifyTestRequest):
+    """
+    Subscribers can use this endpoint to test their signature generation and verification.
+    """
+    import json
+    payload_str = json.dumps(data.payload, separators=(",", ":"))
+
+    try:
+        is_valid = verifier.verify(
+            raw_body=payload_str,
+            header_value=data.signature_header,
+            secret_token=data.secret_token,
+        )
+        return {"valid": is_valid, "message": "Signature verified successfully."}
+    except WebhookVerificationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Verification failed: {str(exc)}",
+        )
