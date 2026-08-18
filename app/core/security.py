@@ -3,21 +3,24 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import jwt
-from passlib.context import CryptContext
+import bcrypt
 from app.core.config import settings
 
-# 1. Password Hashing Context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
+# 1. Password Hashing with native bcrypt
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plaintext password against a stored bcrypt hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )
 
 
 def get_password_hash(password: str) -> str:
     """Generates a salted bcrypt hash from a plaintext password."""
-    return pwd_context.hash(password)
+    # Truncate to 72 bytes to adhere to bcrypt specification
+    password_bytes = password.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password_bytes, salt).decode("utf-8")
 
 
 # 2. JWT Generation & Verification
@@ -26,13 +29,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
     extra_claims: dict[str, Any] | None = None,
 ) -> str:
-    """
-    Creates an encoded JSON Web Token (JWT).
-    
-    :param subject: The primary subject identifier (e.g., user ID).
-    :param expires_delta: Optional custom lifetime timedelta.
-    :param extra_claims: Optional dictionary of additional claims (e.g., permissions).
-    """
+    """Creates an encoded JSON Web Token (JWT)."""
     now = datetime.now(timezone.utc)
     
     if expires_delta:
@@ -49,45 +46,32 @@ def create_access_token(
     if extra_claims:
         to_encode.update(extra_claims)
 
-    encoded_jwt = jwt.encode(
+    return jwt.encode(
         to_encode,
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
-    return encoded_jwt
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
-    """
-    Decodes and validates a JWT token. Returns the payload dictionary
-    or None if the token is expired, tampered with, or invalid.
-    """
+    """Decodes and validates a JWT token."""
     try:
-        payload = jwt.decode(
+        return jwt.decode(
             token,
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM],
         )
-        return payload
     except jwt.PyJWTError:
         return None
 
 
 # 3. API Key Generation & Hashing Utilities
 def generate_api_key(prefix: str = "wh_live_") -> tuple[str, str, str]:
-    """
-    Generates a secure, random API key for external developers.
-    
-    Returns a tuple of:
-    - raw_key: The full plaintext key to display ONCE to the user (e.g. 'wh_live_a8f9b2...')
-    - key_prefix: The visible prefix for dashboards (e.g. 'wh_live_a8f9')
-    - hashed_key: SHA-256 hash to be safely stored in the database
-    """
+    """Generates a secure random API key."""
     random_secret = secrets.token_urlsafe(32)
     raw_key = f"{prefix}{random_secret}"
     key_prefix = raw_key[:16]
     hashed_key = hash_api_key(raw_key)
-
     return raw_key, key_prefix, hashed_key
 
 

@@ -18,6 +18,7 @@ class User(Base, TimestampUUIDMixin):
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     plan_tier: Mapped[PlanTier] = mapped_column(Enum(PlanTier, name="plan_tier_enum", native_enum=True), default=PlanTier.FREE, nullable=False)

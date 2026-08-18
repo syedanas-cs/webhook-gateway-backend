@@ -1,8 +1,7 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1.api import api_router
 from app.core.config import settings
-from app.core.database import get_db
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -10,15 +9,21 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
 
-@app.get("/health", tags=["System"])
-async def health_check(db: AsyncSession = Depends(get_db)):
-    # Execute a lightweight query to test PostgreSQL connection
-    result = await db.execute(text("SELECT 1"))
-    db_status = "connected" if result.scalar() == 1 else "disconnected"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+@app.get("/health", tags=["System"])
+async def health_check():
     return {
         "status": "healthy",
+        "service": settings.PROJECT_NAME,
         "environment": settings.ENVIRONMENT,
-        "database": db_status,
-        "version": settings.VERSION,
     }
